@@ -1,0 +1,132 @@
+.r Conversion.pro
+.r CircleSym
+.r LuminosityFunction
+.r SelectionFunction
+.r read_2MRS.pro
+
+;;; Read the catalog 2MASS
+FileName = '2MRSCorrected.txt'
+Cat = read_2MRS(fileName)
+
+;;; No Galactic plane
+wNoGP = where(abs(Cat.b) ge 10)
+CatNoGP = Cat[wNoGP] 
+
+;;; Keep only galaxies up to xxx Mpc
+distCut = 300.
+wDist = where(Cat.distance lt distCut)
+Cat = Cat[wDist]
+
+;;; Plot options
+Charsize = 1
+Charthick = 1.5
+
+;;; Reference size of a volume-limited-sample
+distRef = 1d*100
+
+;;; Filling in the Galactic Plane
+distStart = 0
+distStop = distCut
+distStep = 1
+m0 = 11.25
+.r VolumeLimitedSample.pro
+VolumeLimitedSampleAnalytic, Cat, distStart, distStop, distStep, distMax = distMax, magMin = magMin, size = size, m0 = m0
+.r FillingInTheGP.pro
+CatGeneratedInGP = FillingInTheGP(Cat,distMax,magMin)
+
+CatComplete = [Cat,CatGeneratedInGP]
+
+;;; map
+PS_Start, filename = '2MRSSky.ps', _ref_extra = {xsize:12,ysize:6,bold:0}, /encapsulated
+.r CircleSym.pro
+map_set, 0, 0, /mollweide, /noborder, Position = [0.05,0.05,0.95,0.75], /reverse
+cgLoadCT, 0, /reverse
+cgPlots, Cat.l, Cat.b, psym = 15, symsize = 0.4, SymColor = BytScl(cat.distance)
+cgColorbar, Range = [Min(cat.distance), Max(cat.distance)], Divisions = 0, title = 'distance [Mpc]', $
+	    Position = [0.10, 0.90, 0.45, 0.95], CharSize = CharSize+0.25
+cgLoadct, 1, /reverse
+cgPlots, CatGeneratedInGP.l, CatGeneratedInGP.b, psym = 15, symsize = 0.4, SymColor = BytScl(catGeneratedInGP.distance)
+cgColorbar, Range = [Min(catGeneratedInGP.distance), Max(catGeneratedInGP.distance)], Divisions = 0, $
+	    title = 'distance [Mpc]', Position = [0.55, 0.9, 0.9, 0.95], CharSize = CharSize+0.25
+cgLoadct, 39
+; FOV
+euler, findgen(361), fltarr(361)+25., LonFOV, LatFOV, 1
+cgPlot, LonFOV, LatFOV, linestyle = 5, thick = 5, color = 250, /overplot
+xyouts, 110, -45, 'FOV', alignment = 0.5, charsize = charsize+0.25, charthick = charthick, color = 250
+; Cen A
+LonCenA = 309.512
+LatCenA = 19.4179
+cgPlot, [LonCenA], [LatCenA], psym = 7, color = 250, symsize = 2., thick = 5, /overplot
+xyouts, LonCenA, LatCenA+4, 'Cen A', alignment = 0.5, charsize = charsize+0.25, color = 250, charthick = charthick
+; Zone of avoidance
+LonPlane = 360*findgen(2000)/1999.
+LatPlane = fltarr(2000)+5
+LatPlane[where(LonPlane le 30 or LonPlane ge 330)] =10
+cgPlot, LonPlane, LatPlane, thick = 4, /overplot
+cgPlot, LonPlane, -LatPlane, thick = 4, /overplot
+; Grid
+latitudes = [90,60,30,-30,-60,-90]
+longitudes = [0,60,120,179.9,180.1,240,300,360]
+latNames = ['90','60','30','-30','-60','-90']
+lonNames = ['0','60','120','','180','240','300','']
+map_grid, label = 1, lonlab = -2.5, latlab = 179, lats = latitudes, latnames = latNames, lons = longitudes, $
+          lonnames = lonNames, charsize = charsize+0.25, glinestyle = 2, lonalign = 0.5, latalign = 0, $
+          charthick = charthick
+PS_End, /PDF, /delete_ps
+
+
+
+;;; Volume Limited + Luminosity Function
+magStart = -27
+magStop = -20
+magStep = 0.5
+PhiBefore = LuminosityFunction(Cat, magStart, magStop, magStep, distMax, magMin)
+PhiAfter = LuminosityFunction(CatComplete, magStart, magStop, magStep, distMax, magMin, mag = mag, dPhi = dPhiAfter)
+PhiAdded = LuminosityFunction(CatGeneratedInGP, magStart, magStop, magStep, distMax, magMin)
+
+VolumeLimitedSampleAnalytic, CatComplete, distStart, distStop, distStep, distMax = distMax, $
+                             magMin = magMin, size = size, m0 = m0
+
+
+PS_Start, filename = '2MRSLuminosityDistance.ps', _ref_extra = {xsize:5,ysize:5,bold:0}, /encapsulated
+; Absolute magnitude vs distance
+magRef = interpol(magMin,distMax,distRef)
+cgPlot, Cat.distance, Cat.AbsoluteMagnitude, psym = 15, symsize = 0.2, xstyle = 5, ytitle = textoidl('M_{K}'), $
+        position = [0.15,0.54,0.9,0.93], Charsize = CharSize+0.25, yrange = [-30,-10], yticks = 2, ytickv = [-28,-20,-12]
+cgPlot, distMax, magMin, color = 'red', linestyle = 0, thick = 3, /overplot
+cgPlot, distRef*findgen(100)/99., fltarr(100)+magRef, color = 'orange', linestyle = 5, thick = 5, /overplot
+cgPlot, fltarr(100)+distRef, magRef*(findgen(100)/99.+1), color = 'orange', linestyle = 5, thick = 5, /overplot
+legend, textoidl('K_{s} = ')+string(m0,format ='(f5.2)'), linestyle = 0, thick = 3, CharSize = CharSize, $
+        box = 0, pspacing = 2, color = 250, margin = 0.25, linsize = 1., spacing = 0.25, /right
+
+cgAxis, !X.CRange[1], !Y.CRange[1], XRange = !X.CRANGE, XAxis = 1, CharSize = Charsize+0.25
+
+cgPlot, CatGeneratedInGP.distance, CatGeneratedInGP.AbsoluteMagnitude, psym = 15, symsize = 0.2, $
+        xtitle = 'distance [Mpc]', ytitle = textoidl('M_{K}'), yrange = [-30,-10], yticks = 2, $
+        ytickv = [-28,-20,-12], Charsize = CharSize+0.25, position = [0.15,0.14,0.9,0.54], $
+        /noerase
+cgPlot, distMax, magMin, color = 'red', linestyle = 0, thick = 3, /overplot
+cgPlot, distRef*findgen(100)/99., fltarr(100)+magRef, color = 'orange', linestyle = 5, thick = 5, /overplot
+cgPlot, fltarr(100)+distRef, magRef*(findgen(100)/99.+1), color = 'orange', linestyle = 5, thick = 5, /overplot
+PS_End, /pdf, /delete_ps
+
+PS_Start, filename = '2MRSVolumeLimitedSample.ps', _ref_extra = {xsize:5,ysize:5,bold:0}, /encapsulated
+; Size of a volume-limited sample
+nGrid = 20
+distMaxGrid = distStep+(distStop-distStep)*findgen(nGrid)/(nGrid-1)
+sizeGrid = interpol(size,distMax,distMaxGrid)
+sizeRef = interpol(size,distMax,distRef)
+cgPlot, distMaxGrid, sizeGrid, psym = 16, symsize = 1, yrange = [0,7000], /ysty, $
+	xtitle = 'distance [Mpc]', ytitle = 'Number of Galaxies', CharSize = CharSize+0.25
+cgPlot, distRef*findgen(100)/99., fltarr(100)+sizeRef, color = 'orange', linestyle = 5, thick = 5, /overplot
+cgPlot, fltarr(100)+distRef, sizeRef*findgen(100)/99., color = 'orange', linestyle = 5, thick = 5, /overplot
+PS_End, /PDF, /delete_ps
+
+PS_Start, filename = '2MRSLumFunc.ps', _ref_extra = {xsize:5,ysize:5,bold:0}, /encapsulated
+; Luminosity function
+cgPlot, mag, PhiAfter, /ylog, xtitle = textoidl('M_{K}'), ytitle = textoidl('\Phi / [M_{K} . Mpc^3] '), $
+        CharSize = CharSize+0.25, psym = symcat(9), symsize = 1, xrange = [magStop,magStart], /xsty
+cgErrPlot, mag, phiAfter-dPhiAfter, phiAfter+dPhiAfter
+PS_End, /PDF, /delete_ps
+
+
